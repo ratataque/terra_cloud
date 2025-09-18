@@ -1,6 +1,19 @@
 # Terragrunt Azure Deployment Guide
 
-This guide outlines the steps required to deploy the containerized Laravel application to Azure using the provided Terragrunt configuration.
+This guide outlines the steps required to deploy the containerized Laravel application and its database to Azure using the provided Terragrunt configuration.
+
+This project is configured with two cloud environments:
+*   `qa`: A cost-effective environment for testing and quality assurance.
+*   `prod`: A more powerful, production-grade environment for the live application.
+
+### Working with Environments (`qa` and `prod`)
+
+All `terragrunt` commands must be run from within the directory of the environment you want to affect.
+
+- To work with the **QA** environment, first change into its directory: `cd terragrunt/qa`
+- To work with the **Production** environment, first change into its directory: `cd terragrunt/prod`
+
+The rest of this guide assumes you are running commands from within your chosen environment directory.
 
 ### Prerequisites
 
@@ -23,9 +36,7 @@ az login
 
 ### Step 2: Create Backend Storage for Terraform State
 
-Terragrunt and Terraform need an Azure Storage Account to store the state of your infrastructure. This is crucial for collaboration and state management.
-
-First, set some variables in your shell. The storage account name must be globally unique, so a random suffix is added.
+This is a **one-time setup**. Terragrunt needs an Azure Storage Account to store the state of your infrastructure, which is shared between all environments.
 
 ```bash
 export RESOURCE_GROUP_NAME="tfstate-rg"
@@ -46,83 +57,69 @@ Next, **update the root `terragrunt/terragrunt.hcl` file** with the `resource_gr
 
 ---
 
-### Step 3: Configure Your Environment Variables
+### Step 3: Configure Your Environment Secrets
 
-1.  Navigate to the `dev` environment directory:
-    ```bash
-    cd terragrunt/dev
-    ```
+This step must be done for **each environment** you intend to deploy.
 
-2.  Copy the example variables file to create your own local configuration:
+1.  Navigate to your chosen environment directory (e.g., `cd terragrunt/qa`).
+
+2.  Copy the example variables file:
     ```bash
     cp terraform.tfvars.example terraform.tfvars
     ```
 
-3.  **Generate a new Laravel App Key**. Run this command from the root of your project and copy the `base64:...` output:
-    ```bash
-    php artisan key:generate --show
-    ```
+3.  **Edit the new `terraform.tfvars` file** and set the required secrets:
 
-4.  **Edit `terraform.tfvars`**. Open this new file and:
-    *   Paste the generated app key as the value for `APP_KEY`.
-    *   Update the `APP_URL` to match the app name that will be created (e.g., `https://sampleapp-dev-app.azurewebsites.net`).
+    *   **`db_admin_password`**: Set a strong, complex password for the database administrator.
+    *   **`APP_KEY`**: From the **root of the project**, run `php artisan key:generate --show` and paste the full `base64:...` output here.
+    *   **`APP_URL`**: Update this with the future URL of your application (e.g., `https://sampleapp-qa-app.azurewebsites.net` for the QA environment).
 
 ---
 
 ### Step 4: Build and Push Your Docker Image
 
-This step is a two-part process. First, you create the Azure Container Registry (ACR) with Terragrunt, then you push your Docker image to it.
+This step is a two-part process. First, you create the Azure resources, then you push your Docker image to the new container registry.
 
-1.  **Initialize Terragrunt**. From the `terragrunt/dev` directory, run:
+1.  **Initialize Terragrunt**. From your chosen environment directory, run:
     ```bash
     terragrunt init
     ```
-    This downloads the necessary Terraform providers and configures the remote state backend you created in Step 2.
 
-2.  **First Apply**. Run `apply` to create the initial set of resources, which includes the ACR.
+2.  **First Apply**. Run `apply` to create the Azure resources for the current environment.
     ```bash
     terragrunt apply
     ```
-    Review the plan shown by Terragrunt and, when prompted, type `yes` to approve it. Make a note of the `azurerm_container_registry` name in the output (e.g., `sampleappdevacr`).
+    Review the plan and type `yes` to approve it. Make a note of the `azurerm_container_registry` name in the output (e.g., `sampleappqaacr` for QA).
 
-3.  **Build and Push the Image**. Go back to the project root directory. Use the Azure CLI to build your `Dockerfile` and push the resulting image directly to your new ACR.
-
+3.  **Build and Push the Image**. Go back to the project root directory. Use the Azure CLI to build and push your image.
     ```bash
     cd ../..
     az acr build --registry <your-acr-name> --image sample-app:latest .
     ```
-    (Replace `<your-acr-name>` with the actual ACR name from the previous step).
+    (Replace `<your-acr-name>` with the name from the previous step).
 
 ---
 
 ### Step 5: Update Image Name and Final Deployment
 
-1.  The Terraform module needs the full, correct path to your image in the registry. **Update `terragrunt/dev/terragrunt.hcl`**. Change the `docker_image` input to use the login server of your new ACR.
+1.  The Terraform module needs the full path to your image. **Update the `terragrunt.hcl` file in your environment directory** (e.g., `terragrunt/qa/terragrunt.hcl`). Change the `docker_image` input to use the login server of your new ACR.
 
-    *Before:*
+    *After (example for QA):*
     ```hcl
-    docker_image = "sampleapp.azurecr.io/sample-app"
+    docker_image = "sampleappqaacr.azurecr.io/sample-app"
     ```
 
-    *After (example):*
-    ```hcl
-    docker_image = "sampleappdevacr.azurecr.io/sample-app"
-    ```
-
-2.  **Final Apply**. Go back to the `dev` directory and run `apply` one last time.
+2.  **Final Apply**. Go back to your environment directory (e.g., `cd terragrunt/qa`) and run `apply` one last time.
     ```bash
-    cd terragrunt/dev
     terragrunt apply
     ```
     This final run will update the App Service to point to your container image, completing the deployment.
-
-Your application should now be deployed and accessible at the URL provided in the Terraform outputs.
 
 ---
 
 ### Clean Up
 
-To destroy all the Azure resources created by this process and avoid further charges, run the destroy command from the `terragrunt/dev` directory:
+To destroy all the resources in a specific environment, navigate to its directory (e.g., `cd terragrunt/qa`) and run:
 
 ```bash
 terragrunt destroy
