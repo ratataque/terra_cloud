@@ -7,36 +7,47 @@ terraform {
   }
 }
 
-# Create a resource group
 resource "azurerm_resource_group" "main" {
   name     = "${var.project_name}-${var.environment}-rg"
   location = var.location
+
+  tags = var.tags
 }
 
-# Create an Azure Container Registry
 resource "azurerm_container_registry" "main" {
   name                = "${var.project_name}${var.environment}acr"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
-  sku                 = "Basic"
+  sku                 = var.acr_sku
   admin_enabled       = true
+
+  tags = var.tags
 }
 
-# Create a flexible MySQL server
 resource "azurerm_mysql_flexible_server" "main" {
   name                   = "${var.project_name}-${var.environment}-mysql"
   resource_group_name    = azurerm_resource_group.main.name
   location               = azurerm_resource_group.main.location
   administrator_login    = var.db_admin_username
   administrator_password = var.db_admin_password
-  sku_name               = "B_Standard_B1ms" # Burstable, good for dev/test
+  sku_name               = var.db_sku
   version                = "8.0.21"
 
-  # Allow public access from any Azure service
-  public_network_access_enabled = true
+  storage {
+    size_gb = var.db_storage_gb
+  }
+
+  tags = var.tags
 }
 
-# Create a database within the flexible server
+resource "azurerm_mysql_flexible_server_firewall_rule" "azure_services" {
+  name                = "AllowAzureServices"
+  resource_group_name = azurerm_resource_group.main.name
+  server_name         = azurerm_mysql_flexible_server.main.name
+  start_ip_address    = "0.0.0.0"
+  end_ip_address      = "0.0.0.0"
+}
+
 resource "azurerm_mysql_flexible_database" "main" {
   name                = var.db_name
   resource_group_name = azurerm_resource_group.main.name
@@ -45,44 +56,53 @@ resource "azurerm_mysql_flexible_database" "main" {
   collation           = "utf8mb4_unicode_ci"
 }
 
-# Create an App Service Plan
 resource "azurerm_service_plan" "main" {
   name                = "${var.project_name}-${var.environment}-asp"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   os_type             = "Linux"
   sku_name            = var.app_service_plan_sku
+
+  tags = var.tags
 }
 
-# Create a Linux Web App for containers
 resource "azurerm_linux_web_app" "main" {
   name                = "${var.project_name}-${var.environment}-app"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_service_plan.main.location
   service_plan_id     = azurerm_service_plan.main.id
+  https_only          = true
 
   site_config {
+    always_on     = var.environment == "prod" ? true : false
+    http2_enabled = true
+    ftps_state    = "Disabled"
+
     application_stack {
-      docker_image     = var.docker_image
-      docker_image_tag = var.docker_image_tag
+      docker_image_name   = "${var.docker_image}:${var.docker_image_tag}"
+      docker_registry_url = "https://${azurerm_container_registry.main.login_server}"
     }
   }
 
   app_settings = merge(var.app_settings, {
-    "DB_CONNECTION" = "mysql"
-    "DB_HOST"       = azurerm_mysql_flexible_server.main.fqdn
-    "DB_PORT"       = "3306"
-    "DB_DATABASE"   = azurerm_mysql_flexible_database.main.name
-    "DB_USERNAME"   = azurerm_mysql_flexible_server.main.administrator_login
-    "DB_PASSWORD"   = azurerm_mysql_flexible_server.main.administrator_password
+    "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
+    "DOCKER_REGISTRY_SERVER_URL"          = "https://${azurerm_container_registry.main.login_server}"
+    "DOCKER_ENABLE_CI"                    = "true"
+    "DB_CONNECTION"                       = "mysql"
+    "DB_HOST"                             = azurerm_mysql_flexible_server.main.fqdn
+    "DB_PORT"                             = "3306"
+    "DB_DATABASE"                         = azurerm_mysql_flexible_database.main.name
+    "DB_USERNAME"                         = azurerm_mysql_flexible_server.main.administrator_login
+    "DB_PASSWORD"                         = azurerm_mysql_flexible_server.main.administrator_password
   })
 
   identity {
     type = "SystemAssigned"
   }
+
+  tags = var.tags
 }
 
-# Grant the App Service pull access to the Container Registry
 resource "azurerm_role_assignment" "app_to_acr" {
   scope                = azurerm_container_registry.main.id
   role_definition_name = "AcrPull"

@@ -1,132 +1,521 @@
-# Terragrunt Azure Deployment Guide
+# TerraCloud Deployment Guide
 
-This guide outlines the steps required to deploy the containerized Laravel application and its database to Azure using the provided Terragrunt configuration.
+Complete workflow guide for deploying the TerraCloud application to Azure using Terragrunt and Terraform.
 
-This project is configured with two cloud environments:
+## Overview
 
-- `qa`: A cost-effective environment for testing and quality assurance.
-- `prod`: A more powerful, production-grade environment for the live application.
+This guide covers the complete deployment workflow:
+1. Azure authentication and state backend setup
+2. Environment configuration with Terragrunt
+3. Infrastructure provisioning with Terraform
+4. Application deployment via Docker containers
+5. Database migrations and application initialization
 
-### Working with Environments (`qa` and `prod`)
+## Architecture
 
-All `terragrunt` commands must be run from within the directory of the environment you want to affect.
+```
+terragrunt/
+├── terragrunt.hcl          # Root config with Azure backend
+├── modules/
+│   └── azure-app-service/  # Terraform module
+├── qa/                     # QA environment
+│   └── terragrunt.hcl
+└── prod/                   # Production environment
+    └── terragrunt.hcl
+```
 
-- To work with the **QA** environment, first change into its directory: `cd terragrunt/qa`
-- To work with the **Production** environment, first change into its directory: `cd terragrunt/prod`
-
-The rest of this guide assumes you are running commands from within your chosen environment directory.
-
-### Prerequisites
-
-Make sure you have the following command-line tools installed:
-
-- [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
-- [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli)
-- [Terragrunt](https://terragrunt.gruntwork.io/docs/getting-started/install/)
+Each environment deploys:
+- Resource Group
+- Container Registry (ACR)
+- MySQL Flexible Server
+- App Service Plan
+- Linux Web App (containerized)
 
 ---
 
-### Step 1: Log in to Azure
+## Prerequisites
 
-Open your terminal and run the following command. Follow the prompts in your browser to authenticate with your Azure account.
+Install required tools:
+
+```bash
+# Azure CLI
+brew install azure-cli  # macOS
+# or visit: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli
+
+# Terraform
+brew install terraform  # macOS
+# or visit: https://developer.hashicorp.com/terraform/install
+
+# Terragrunt
+brew install terragrunt  # macOS
+# or visit: https://terragrunt.gruntwork.io/docs/getting-started/install/
+```
+
+---
+
+## Step 1: Azure Authentication
+
+Authenticate with Azure CLI:
 
 ```bash
 az login
 ```
 
----
-
-### Step 2: Create Backend Storage for Terraform State
-
-This is a **one-time setup**. Terragrunt needs an Azure Storage Account to store the state of your infrastructure, which is shared between all environments.
+Set your subscription (if you have multiple):
 
 ```bash
-export RESOURCE_GROUP_NAME="tfstate-rg"
-export STORAGE_ACCOUNT_NAME="tfstate$(openssl rand -hex 4)"
-export LOCATION="WestEurope"
-
-# Create the resource group
-az group create --name $RESOURCE_GROUP_NAME --location $LOCATION
-
-# Create the storage account
-az storage account create --name $STORAGE_ACCOUNT_NAME --resource-group $RESOURCE_GROUP_NAME --location $LOCATION --sku Standard_LRS
-
-# Create the blob container for storing state files
-az storage container create --name tfstate --account-name $STORAGE_ACCOUNT_NAME
+az account list --output table
+az account set --subscription "YOUR_SUBSCRIPTION_ID"
 ```
 
-Next, **update the root `terragrunt/terragrunt.hcl` file** with the `resource_group_name` and `storage_account_name` you just created. Replace the `"PLEASE_UPDATE"` placeholders.
-
 ---
 
-### Step 3: Configure Your Environment Secrets
+## Step 2: Create Terraform State Backend
 
-This step must be done for **each environment** you intend to deploy.
+**One-time setup** - creates shared storage for Terraform state files.
 
-1.  Navigate to your chosen environment directory (e.g., `cd terragrunt/qa`).
+> 📖 **For production setup with versioning, geo-redundancy, and security**, see [STATE_BACKEND_SETUP.md](terragrunt/STATE_BACKEND_SETUP.md)
 
-2.  Copy the example variables file:
-
-    ```bash
-    cp terraform.tfvars.example terraform.tfvars
-    ```
-
-3.  **Edit the new `terraform.tfvars` file** and set the required secrets:
-    - **`db_admin_password`**: Set a strong, complex password for the database administrator.
-    - **`APP_KEY`**: From the **root of the project**, run `php artisan key:generate --show` and paste the full `base64:...` output here.
-    - **`APP_URL`**: Update this with the future URL of your application (e.g., `https://sampleapp-qa-app.azurewebsites.net` for the QA environment).
-
----
-
-### Step 4: Build and Push Your Docker Image
-
-This step is a two-part process. First, you create the Azure resources, then you push your Docker image to the new container registry.
-
-1.  **Initialize Terragrunt**. From your chosen environment directory, run:
-
-    ```bash
-    terragrunt init
-    ```
-
-2.  **First Apply**. Run `apply` to create the Azure resources for the current environment.
-
-    ```bash
-    terragrunt apply
-    ```
-
-    Review the plan and type `yes` to approve it. Make a note of the `azurerm_container_registry` name in the output (e.g., `sampleappqaacr` for QA).
-
-3.  **Build and Push the Image**. Go back to the project root directory. Use the Azure CLI to build and push your image.
-    ```bash
-    cd ../..
-    az acr build --registry <your-acr-name> --image sample-app:latest .
-    ```
-    (Replace `<your-acr-name>` with the name from the previous step).
-
----
-
-### Step 5: Update Image Name and Final Deployment
-
-1.  The Terraform module needs the full path to your image. **Update the `terragrunt.hcl` file in your environment directory** (e.g., `terragrunt/qa/terragrunt.hcl`). Change the `docker_image` input to use the login server of your new ACR.
-
-    _After (example for QA):_
-
-    ```hcl
-    docker_image = "sampleappqaacr.azurecr.io/sample-app"
-    ```
-
-2.  **Final Apply**. Go back to your environment directory (e.g., `cd terragrunt/qa`) and run `apply` one last time.
-    ```bash
-    terragrunt apply
-    ```
-    This final run will update the App Service to point to your container image, completing the deployment.
-
----
-
-### Clean Up
-
-To destroy all the resources in a specific environment, navigate to its directory (e.g., `cd terragrunt/qa`) and run:
+### Quick Setup (Development)
 
 ```bash
+# Define variables
+export TF_STATE_RG="terracloud-tfstate-rg"
+export TF_STATE_SA="terracloudtfstate$(openssl rand -hex 2)"
+export LOCATION="westeurope"
+
+# Create resource group
+az group create \
+  --name $TF_STATE_RG \
+  --location $LOCATION
+
+# Create storage account
+az storage account create \
+  --name $TF_STATE_SA \
+  --resource-group $TF_STATE_RG \
+  --location $LOCATION \
+  --sku Standard_LRS \
+  --https-only true \
+  --min-tls-version TLS1_2
+
+# Create container
+az storage container create \
+  --name tfstate \
+  --account-name $TF_STATE_SA \
+  --auth-mode login
+
+# Save these values
+echo "TF_STATE_RG=$TF_STATE_RG"
+echo "TF_STATE_SA=$TF_STATE_SA"
+```
+
+Export these variables (add to your `.bashrc` or `.zshrc`):
+
+```bash
+export TF_STATE_RG="terracloud-tfstate-rg"
+export TF_STATE_SA="your-storage-account-name"
+```
+
+### Production Setup (Recommended)
+
+For production, use geo-redundant storage with versioning:
+
+```bash
+# Use Standard_GRS instead of Standard_LRS
+az storage account create \
+  --name $TF_STATE_SA \
+  --resource-group $TF_STATE_RG \
+  --location $LOCATION \
+  --sku Standard_GRS \
+  --https-only true \
+  --min-tls-version TLS1_2 \
+  --allow-blob-public-access false
+
+# Enable versioning
+az storage account blob-service-properties update \
+  --account-name $TF_STATE_SA \
+  --enable-versioning true
+
+# Enable soft delete (30 days)
+az storage account blob-service-properties update \
+  --account-name $TF_STATE_SA \
+  --enable-delete-retention true \
+  --delete-retention-days 30
+```
+
+---
+
+## Step 3: Environment Configuration
+
+### For QA Environment
+
+```bash
+cd terragrunt/qa
+```
+
+Set required environment variables:
+
+```bash
+# Database password (use a strong password)
+export DB_ADMIN_PASSWORD="YourSecurePassword123!"
+
+# Laravel app key (generate with: php artisan key:generate --show)
+export APP_KEY="base64:your-generated-key-here"
+
+# Optional: Override Docker tag
+export DOCKER_TAG="latest"
+```
+
+### For Production Environment
+
+```bash
+cd terragrunt/prod
+```
+
+Set production environment variables:
+
+```bash
+export DB_ADMIN_PASSWORD="YourProductionPassword123!"
+export APP_KEY="base64:your-production-key-here"
+export DOCKER_TAG="stable"
+```
+
+---
+
+## Step 4: Infrastructure Deployment
+
+### Initialize Terragrunt
+
+```bash
+terragrunt init
+```
+
+This will:
+- Download Terraform providers
+- Generate backend configuration
+- Initialize the module
+
+### Plan Infrastructure
+
+Review changes before applying:
+
+```bash
+terragrunt plan
+```
+
+### Deploy Infrastructure
+
+```bash
+terragrunt apply
+```
+
+Type `yes` when prompted. This creates:
+- Resource Group
+- Container Registry
+- MySQL Server & Database
+- App Service Plan
+- Web App
+
+**Note the outputs**, especially:
+- `acr_login_server`: e.g., `terracloudqaacr.azurecr.io`
+- `app_service_url`: Your application URL
+
+---
+
+## Step 5: Build and Push Docker Image
+
+### Authenticate to ACR
+
+```bash
+# Get ACR name from Terragrunt output
+ACR_NAME=$(terragrunt output -raw acr_login_server | cut -d'.' -f1)
+
+# Login to ACR
+az acr login --name $ACR_NAME
+```
+
+### Build and Push Image
+
+From the project root:
+
+```bash
+cd ../..  # Go to project root
+
+# Build and push in one command
+az acr build \
+  --registry $ACR_NAME \
+  --image app:latest \
+  --file Dockerfile \
+  .
+```
+
+Or build locally and push:
+
+```bash
+docker build -t $ACR_NAME.azurecr.io/app:latest .
+docker push $ACR_NAME.azurecr.io/app:latest
+```
+
+---
+
+## Step 6: Deploy Application
+
+The Web App will automatically pull the Docker image. Wait a few minutes, then verify:
+
+```bash
+# Get app URL
+APP_URL=$(terragrunt output -raw app_service_url)
+echo "Application URL: $APP_URL"
+
+# Test the application
+curl -I $APP_URL
+```
+
+### Run Database Migrations
+
+Connect to the App Service and run migrations:
+
+```bash
+# Get app name
+APP_NAME=$(terragrunt output -raw app_service_name)
+
+# SSH into the container
+az webapp ssh --name $APP_NAME --resource-group terracloud-qa-rg
+
+# Inside the container, run:
+php artisan migrate --force
+php artisan db:seed --force  # if you have seeders
+```
+
+Or use Azure CLI command execution:
+
+```bash
+az webapp ssh --name $APP_NAME \
+  --resource-group terracloud-qa-rg \
+  --command "php artisan migrate --force"
+```
+
+---
+
+## Step 7: Verification
+
+### Check Application Logs
+
+```bash
+az webapp log tail \
+  --name $APP_NAME \
+  --resource-group terracloud-qa-rg
+```
+
+### Test Endpoints
+
+```bash
+# Health check
+curl $APP_URL/api/health
+
+# Application
+open $APP_URL  # macOS
+```
+
+---
+
+## Workflow Summary
+
+### Initial Deployment
+
+```bash
+# 1. Navigate to environment
+cd terragrunt/qa
+
+# 2. Set environment variables
+export DB_ADMIN_PASSWORD="..." APP_KEY="..."
+
+# 3. Deploy infrastructure
+terragrunt init
+terragrunt apply
+
+# 4. Build and push image
+cd ../..
+az acr login --name terracloudqaacr
+az acr build --registry terracloudqaacr --image app:latest .
+
+# 5. Verify deployment
+curl -I https://terracloud-qa-app.azurewebsites.net
+```
+
+### Update Application
+
+```bash
+# 1. Build new image with tag
+az acr build --registry terracloudqaacr --image app:v1.2.3 .
+
+# 2. Update environment config
+cd terragrunt/qa
+export DOCKER_TAG="v1.2.3"
+
+# 3. Apply changes
+terragrunt apply
+
+# 4. Verify
+az webapp restart --name terracloud-qa-app --resource-group terracloud-qa-rg
+```
+
+### Update Infrastructure
+
+```bash
+# 1. Modify terragrunt.hcl or module files
+# 2. Plan changes
+terragrunt plan
+
+# 3. Apply changes
+terragrunt apply
+```
+
+---
+
+## Environment Management
+
+### Switch Between Environments
+
+```bash
+# Work on QA
+cd terragrunt/qa
+terragrunt plan
+
+# Work on Production
+cd terragrunt/prod
+terragrunt plan
+```
+
+### Environment Variables Reference
+
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `DB_ADMIN_PASSWORD` | Yes | MySQL admin password | `SecurePass123!` |
+| `APP_KEY` | Yes | Laravel encryption key | `base64:xxx...` |
+| `TF_STATE_RG` | Optional | Terraform state RG | `terracloud-tfstate-rg` |
+| `TF_STATE_SA` | Optional | Terraform state SA | `terracloudtfstate` |
+| `DOCKER_TAG` | Optional | Docker image tag | `latest`, `v1.0.0` |
+| `AZURE_REGION` | Optional | Azure region | `westeurope` |
+
+---
+
+## Troubleshooting
+
+### Issue: "Backend initialization required"
+
+```bash
+rm -rf .terraform .terragrunt-cache
+terragrunt init
+```
+
+### Issue: "Container fails to start"
+
+Check logs:
+```bash
+az webapp log tail --name terracloud-qa-app --resource-group terracloud-qa-rg
+```
+
+Restart the app:
+```bash
+az webapp restart --name terracloud-qa-app --resource-group terracloud-qa-rg
+```
+
+### Issue: "Cannot connect to database"
+
+Verify firewall rules and connection string in app settings:
+```bash
+az webapp config appsettings list \
+  --name terracloud-qa-app \
+  --resource-group terracloud-qa-rg \
+  --query "[?name=='DB_HOST'].value" -o tsv
+```
+
+### Issue: "ACR authentication failed"
+
+Re-authenticate:
+```bash
+az acr login --name terracloudqaacr
+```
+
+---
+
+## Cleanup
+
+### Destroy Environment
+
+```bash
+cd terragrunt/qa
 terragrunt destroy
 ```
+
+Type `yes` to confirm. This removes all resources.
+
+### Destroy State Backend (optional)
+
+```bash
+az group delete --name terracloud-tfstate-rg --yes --no-wait
+```
+
+---
+
+## Best Practices
+
+1. **Separate Environments**: Always work in the correct environment directory
+2. **Version Control**: Commit infrastructure changes to Git
+3. **Secrets Management**: Never commit secrets, use environment variables
+4. **Image Tags**: Use semantic versioning for production images
+5. **Plan Before Apply**: Always run `terragrunt plan` first
+6. **State Locking**: Terragrunt handles this automatically via Azure backend
+7. **Rollback**: Keep previous image tags for quick rollback
+
+---
+
+## CI/CD Integration
+
+Example GitHub Actions workflow:
+
+```yaml
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+
+env:
+  ACR_NAME: terracloudprodacr
+  
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Build and Push
+        run: |
+          az acr build --registry $ACR_NAME --image app:${{ github.sha }} .
+      
+      - name: Deploy Infrastructure
+        working-directory: terragrunt/prod
+        env:
+          DB_ADMIN_PASSWORD: ${{ secrets.DB_ADMIN_PASSWORD }}
+          APP_KEY: ${{ secrets.APP_KEY }}
+          DOCKER_TAG: ${{ github.sha }}
+        run: |
+          terragrunt init
+          terragrunt apply -auto-approve
+```
+
+---
+
+## Additional Resources
+
+- [Terragrunt Documentation](https://terragrunt.gruntwork.io/docs/)
+- [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
+- [Azure App Service](https://docs.microsoft.com/en-us/azure/app-service/)
+- [Azure Container Registry](https://docs.microsoft.com/en-us/azure/container-registry/)

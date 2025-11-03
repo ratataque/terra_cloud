@@ -1,64 +1,79 @@
-# variables.tf
-
 variable "project_name" {
-  description = "The name of the project."
+  description = "The name of the project"
   type        = string
 }
 
 variable "environment" {
-  description = "The environment (e.g., dev, staging, prod)."
+  description = "The environment (e.g., dev, qa, prod)"
   type        = string
 }
 
 variable "location" {
-  description = "The Azure region where the resources will be created."
+  description = "The Azure region where resources will be created"
   type        = string
+  default     = "westeurope"
+}
+
+variable "tags" {
+  description = "A map of tags to add to all resources"
+  type        = map(string)
+  default     = {}
 }
 
 variable "docker_image" {
-  description = "The Docker image to deploy."
+  description = "The Docker image name (without tag)"
   type        = string
 }
 
 variable "docker_image_tag" {
-  description = "The tag of the Docker image to deploy."
+  description = "The tag of the Docker image to deploy"
   type        = string
   default     = "latest"
 }
 
 variable "app_settings" {
-  description = "A map of application settings for the App Service."
+  description = "A map of application settings for the App Service"
   type        = map(string)
   default     = {}
 }
 
-# Database variables
 variable "db_name" {
-  description = "The name of the MySQL database to create."
+  description = "The name of the MySQL database to create"
   type        = string
   default     = "laravel"
 }
 
 variable "db_admin_username" {
-  description = "The admin username for the MySQL server."
+  description = "The admin username for the MySQL server"
   type        = string
 }
 
 variable "db_admin_password" {
-  description = "The admin password for the MySQL server. Must be complex."
+  description = "The admin password for the MySQL server"
   type        = string
   sensitive   = true
 }
 
-# Sizing/SKU variables
 variable "app_service_plan_sku" {
-  description = "The SKU for the App Service Plan."
+  description = "The SKU for the App Service Plan"
   type        = string
-  default     = "B1" # Basic tier for non-prod
+  default     = "B1"
 }
 
 variable "db_sku" {
-  description = "The SKU for the MySQL Flexible Server."
+  description = "The SKU for the MySQL Flexible Server"
   type        = string
-  default     = "B_Standard_B1ms" # Burstable tier for non-prod
+  default     = "B_Standard_B1ms"
+}
+
+variable "db_storage_gb" {
+  description = "The storage size in GB for the MySQL Flexible Server"
+  type        = number
+  default     = 20
+}
+
+variable "acr_sku" {
+  description = "The SKU tier of the Container Registry"
+  type        = string
+  default     = "Basic"
 }
