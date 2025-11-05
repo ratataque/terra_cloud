@@ -38,6 +38,7 @@ provider "azurerm" {
       purge_soft_delete_on_destroy = false
     }
   }
+  subscription_id = "6b9318b1-2215-418a-b0fd-ba0832e9b333"
 }
 EOF
 }

@@ -7,17 +7,14 @@ terraform {
   }
 }
 
-resource "azurerm_resource_group" "main" {
-  name     = "${var.project_name}-${var.environment}-rg"
-  location = var.location
-
-  tags = var.tags
+data "azurerm_resource_group" "main" {
+  name = var.resource_group_name
 }
 
 resource "azurerm_container_registry" "main" {
   name                = "${var.project_name}${var.environment}acr"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
+  resource_group_name = data.azurerm_resource_group.main.name
+  location            = data.azurerm_resource_group.main.location
   sku                 = var.acr_sku
   admin_enabled       = true
 
@@ -26,8 +23,8 @@ resource "azurerm_container_registry" "main" {
 
 resource "azurerm_mysql_flexible_server" "main" {
   name                   = "${var.project_name}-${var.environment}-mysql"
-  resource_group_name    = azurerm_resource_group.main.name
-  location               = azurerm_resource_group.main.location
+  resource_group_name    = data.azurerm_resource_group.main.name
+  location               = data.azurerm_resource_group.main.location
   administrator_login    = var.db_admin_username
   administrator_password = var.db_admin_password
   sku_name               = var.db_sku
@@ -42,7 +39,7 @@ resource "azurerm_mysql_flexible_server" "main" {
 
 resource "azurerm_mysql_flexible_server_firewall_rule" "azure_services" {
   name                = "AllowAzureServices"
-  resource_group_name = azurerm_resource_group.main.name
+  resource_group_name = data.azurerm_resource_group.main.name
   server_name         = azurerm_mysql_flexible_server.main.name
   start_ip_address    = "0.0.0.0"
   end_ip_address      = "0.0.0.0"
@@ -50,7 +47,7 @@ resource "azurerm_mysql_flexible_server_firewall_rule" "azure_services" {
 
 resource "azurerm_mysql_flexible_database" "main" {
   name                = var.db_name
-  resource_group_name = azurerm_resource_group.main.name
+  resource_group_name = data.azurerm_resource_group.main.name
   server_name         = azurerm_mysql_flexible_server.main.name
   charset             = "utf8mb4"
   collation           = "utf8mb4_unicode_ci"
@@ -58,8 +55,8 @@ resource "azurerm_mysql_flexible_database" "main" {
 
 resource "azurerm_service_plan" "main" {
   name                = "${var.project_name}-${var.environment}-asp"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
+  resource_group_name = data.azurerm_resource_group.main.name
+  location            = data.azurerm_resource_group.main.location
   os_type             = "Linux"
   sku_name            = var.app_service_plan_sku
 
@@ -68,7 +65,7 @@ resource "azurerm_service_plan" "main" {
 
 resource "azurerm_linux_web_app" "main" {
   name                = "${var.project_name}-${var.environment}-app"
-  resource_group_name = azurerm_resource_group.main.name
+  resource_group_name = data.azurerm_resource_group.main.name
   location            = azurerm_service_plan.main.location
   service_plan_id     = azurerm_service_plan.main.id
   https_only          = true
@@ -79,14 +76,15 @@ resource "azurerm_linux_web_app" "main" {
     ftps_state    = "Disabled"
 
     application_stack {
-      docker_image_name   = "${var.docker_image}:${var.docker_image_tag}"
-      docker_registry_url = "https://${azurerm_container_registry.main.login_server}"
+      docker_image_name        = "${var.docker_image}:${var.docker_image_tag}"
+      docker_registry_url      = "https://${azurerm_container_registry.main.login_server}"
+      docker_registry_username = azurerm_container_registry.main.admin_username
+      docker_registry_password = azurerm_container_registry.main.admin_password
     }
   }
 
   app_settings = merge(var.app_settings, {
     "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
-    "DOCKER_REGISTRY_SERVER_URL"          = "https://${azurerm_container_registry.main.login_server}"
     "DOCKER_ENABLE_CI"                    = "true"
     "DB_CONNECTION"                       = "mysql"
     "DB_HOST"                             = azurerm_mysql_flexible_server.main.fqdn

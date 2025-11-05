@@ -1,3 +1,8 @@
+variable "resource_group_name" {
+  description = "The name of the existing resource group to use"
+  type        = string
+}
+
 variable "project_name" {
   description = "The name of the project"
   type        = string
