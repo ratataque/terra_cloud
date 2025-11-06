@@ -45,7 +45,7 @@ inputs = {
     include.root.locals.common_app_settings,
     {
       "APP_ENV"     = "qa"
-      "APP_DEBUG"   = "true"
+      "APP_DEBUG"   = "false"
       "APP_URL"     = "https://terracloud-qa-app.azurewebsites.net"
       "LOG_LEVEL"   = "debug"
     }
