@@ -102,19 +102,37 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Get ACR credentials
-        id: acr
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          terraform_wrapper: false
+      
+      - name: Setup Terragrunt
         run: |
-          ACR_USERNAME=$(az acr credential show --name terracloudqaacr --query username -o tsv)
-          ACR_PASSWORD=$(az acr credential show --name terracloudqaacr --query passwords[0].value -o tsv)
+          wget -q https://github.com/gruntwork-io/terragrunt/releases/download/v0.54.0/terragrunt_linux_amd64
+          chmod +x terragrunt_linux_amd64
+          sudo mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
+
+      - name: Get ACR credentials from shared infrastructure
+        id: acr
+        working-directory: terragrunt/shared
+        run: |
+          ACR_NAME=$(terragrunt output -raw acr_name)
+          ACR_LOGIN_SERVER=$(terragrunt output -raw acr_login_server)
+          ACR_USERNAME=$(terragrunt output -raw acr_admin_username)
+          ACR_PASSWORD=$(terragrunt output -raw acr_admin_password)
+          
           echo "::add-mask::$ACR_PASSWORD"
+          echo "name=$ACR_NAME" >> $GITHUB_OUTPUT
+          echo "login_server=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
           echo "username=$ACR_USERNAME" >> $GITHUB_OUTPUT
           echo "password=$ACR_PASSWORD" >> $GITHUB_OUTPUT
 
       - name: Login to Azure Container Registry
         uses: docker/login-action@v3
         with:
-          registry: terracloudqaacr.azurecr.io
+          registry: ${{ steps.acr.outputs.login_server }}
           username: ${{ steps.acr.outputs.username }}
           password: ${{ steps.acr.outputs.password }}
 
@@ -124,5 +142,5 @@ jobs:
           context: .
           push: true
           tags: |
-            terracloudqaacr.azurecr.io/app:latest
-            terracloudqaacr.azurecr.io/app:${{ github.sha }}
+            ${{ steps.acr.outputs.login_server }}/app:latest
+            ${{ steps.acr.outputs.login_server }}/app:${{ github.sha }}
