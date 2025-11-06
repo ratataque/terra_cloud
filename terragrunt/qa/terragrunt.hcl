@@ -6,36 +6,47 @@ terraform {
   source = "../modules/azure-app-service"
 }
 
-inputs = {
-  resource_group_name = "rg-stg_1"
-  project_name        = "terracloud"
-  environment         = "qa"
-  location            = "westeurope"
+dependency "shared" {
+  config_path = "../shared"
+}
 
-  tags = {
-    Environment = "QA"
-    CostCenter  = "Engineering"
-  }
+inputs = {
+  resource_group_name = include.root.locals.resource_group_name
+  project_name        = include.root.locals.project_name
+  environment         = "qa"
+  location            = include.root.locals.location
+
+  tags = merge(
+    include.root.locals.common_tags,
+    {
+      Environment = "QA"
+    }
+  )
 
   app_service_plan_sku = "B1"
-  acr_sku              = "Basic"
+  
+  # Reference shared ACR
+  acr_login_server    = dependency.shared.outputs.acr_login_server
+  acr_admin_username  = dependency.shared.outputs.acr_admin_username
+  acr_admin_password  = dependency.shared.outputs.acr_admin_password
+  acr_id              = dependency.shared.outputs.acr_id
 
   db_name           = "terracloud_qa"
   db_admin_username = "dbadmin"
-  db_admin_password = get_env("DB_ADMIN_PASSWORD", "TerraCloud2024!")
+  db_admin_password = include.root.locals.db_admin_password
   db_sku            = "B_Standard_B1ms"
   db_storage_gb     = 20
 
-  docker_image     = "terracloudqaacr.azurecr.io/app"
+  docker_image     = "${dependency.shared.outputs.acr_login_server}/${include.root.locals.docker_image_base}"
   docker_image_tag = get_env("DOCKER_TAG", "latest")
 
-  app_settings = {
-    "APP_NAME"    = "TerraCloud"
-    "APP_ENV"     = "qa"
-    "APP_KEY"     = get_env("APP_KEY", "base64:PLACEHOLDER-CHANGE-BEFORE-APPLY")
-    "APP_DEBUG"   = "true"
-    "APP_URL"     = "https://terracloud-qa-app.azurewebsites.net"
-    "LOG_CHANNEL" = "stack"
-    "LOG_LEVEL"   = "debug"
-  }
+  app_settings = merge(
+    include.root.locals.common_app_settings,
+    {
+      "APP_ENV"     = "qa"
+      "APP_DEBUG"   = "true"
+      "APP_URL"     = "https://terracloud-qa-app.azurewebsites.net"
+      "LOG_LEVEL"   = "debug"
+    }
+  )
 }

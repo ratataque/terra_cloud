@@ -77,8 +77,24 @@ variable "db_storage_gb" {
   default     = 20
 }
 
-variable "acr_sku" {
-  description = "The SKU tier of the Container Registry"
+variable "acr_login_server" {
+  description = "The login server URL for the Azure Container Registry"
   type        = string
-  default     = "Basic"
+}
+
+variable "acr_admin_username" {
+  description = "The admin username for the Azure Container Registry"
+  type        = string
+  sensitive   = true
+}
+
+variable "acr_admin_password" {
+  description = "The admin password for the Azure Container Registry"
+  type        = string
+  sensitive   = true
+}
+
+variable "acr_id" {
+  description = "The ID of the Azure Container Registry for role assignment"
+  type        = string
 }
