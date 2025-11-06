@@ -40,6 +40,16 @@ jobs:
 
       - name: Generate app key
         run: php artisan key:generate
+      
+      - name: Run migrations
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: password
+        run: php artisan migrate --force
 
       - name: Run PHPUnit tests
         env:
@@ -70,3 +80,48 @@ jobs:
       - name: Check code style
         run: vendor/bin/phpcs || echo "Add phpcs to your project with 'composer require --dev squizlabs/php_codesniffer'"
         continue-on-error: true
+
+  build:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Azure Login via OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      - name: Get ACR credentials
+        id: acr
+        run: |
+          ACR_USERNAME=$(az acr credential show --name terracloudqaacr --query username -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name terracloudqaacr --query passwords[0].value -o tsv)
+          echo "::add-mask::$ACR_PASSWORD"
+          echo "username=$ACR_USERNAME" >> $GITHUB_OUTPUT
+          echo "password=$ACR_PASSWORD" >> $GITHUB_OUTPUT
+      
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: terracloudqaacr.azurecr.io
+          username: ${{ steps.acr.outputs.username }}
+          password: ${{ steps.acr.outputs.password }}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            terracloudqaacr.azurecr.io/app:latest
+            terracloudqaacr.azurecr.io/app:${{ github.sha }}
