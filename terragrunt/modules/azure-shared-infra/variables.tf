@@ -8,12 +8,6 @@ variable "project_name" {
   type        = string
 }
 
-variable "location" {
-  description = "The Azure region where resources will be created"
-  type        = string
-  default     = "westeurope"
-}
-
 variable "tags" {
   description = "A map of tags to add to all resources"
   type        = map(string)
@@ -26,14 +20,14 @@ variable "acr_sku" {
   default     = "Standard"
 }
 
-variable "storage_account_tier" {
-  description = "The tier of the storage account"
-  type        = string
-  default     = "Standard"
-}
-
-variable "storage_replication_type" {
-  description = "The replication type for the storage account"
-  type        = string
-  default     = "LRS"
-}
+# variable "storage_account_tier" {
+#   description = "The tier of the storage account"
+#   type        = string
+#   default     = "Standard"
+# }
+#
+# variable "storage_replication_type" {
+#   description = "The replication type for the storage account"
+#   type        = string
+#   default     = "LRS"
+# }

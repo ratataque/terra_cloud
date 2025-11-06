@@ -21,30 +21,12 @@ resource "azurerm_container_registry" "shared" {
   tags = var.tags
 }
 
-resource "azurerm_storage_account" "shared" {
-  name                     = "${var.project_name}sharedsa"
-  resource_group_name      = data.azurerm_resource_group.main.name
-  location                 = data.azurerm_resource_group.main.location
-  account_tier             = var.storage_account_tier
-  account_replication_type = var.storage_replication_type
-  
-  tags = var.tags
-}
-
-resource "azurerm_storage_container" "backups" {
-  name                  = "backups"
-  storage_account_name  = azurerm_storage_account.shared.name
-  container_access_type = "private"
-}
-
-resource "azurerm_storage_container" "logs" {
-  name                  = "logs"
-  storage_account_name  = azurerm_storage_account.shared.name
-  container_access_type = "private"
-}
-
-resource "azurerm_storage_container" "artifacts" {
-  name                  = "artifacts"
-  storage_account_name  = azurerm_storage_account.shared.name
-  container_access_type = "private"
-}
+# resource "azurerm_storage_account" "shared" {
+#   name                     = "${var.project_name}sharedsa"
+#   resource_group_name      = data.azurerm_resource_group.main.name
+#   location                 = data.azurerm_resource_group.main.location
+#   account_tier             = var.storage_account_tier
+#   account_replication_type = var.storage_replication_type
+#
+#   tags = var.tags
+# }

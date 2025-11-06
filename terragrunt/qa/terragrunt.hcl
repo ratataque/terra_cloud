@@ -1,5 +1,6 @@
 include "root" {
   path = find_in_parent_folders("root.hcl")
+  expose = true
 }
 
 terraform {
@@ -24,7 +25,7 @@ inputs = {
   )
 
   app_service_plan_sku = "B1"
-  
+
   # Reference shared ACR
   acr_login_server    = dependency.shared.outputs.acr_login_server
   acr_admin_username  = dependency.shared.outputs.acr_admin_username

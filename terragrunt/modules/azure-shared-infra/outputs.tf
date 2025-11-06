@@ -25,34 +25,19 @@ output "acr_id" {
   value       = azurerm_container_registry.shared.id
 }
 
-output "storage_account_name" {
-  description = "The name of the storage account"
-  value       = azurerm_storage_account.shared.name
-}
-
-output "storage_account_primary_access_key" {
-  description = "The primary access key for the storage account"
-  value       = azurerm_storage_account.shared.primary_access_key
-  sensitive   = true
-}
-
-output "storage_account_primary_connection_string" {
-  description = "The primary connection string for the storage account"
-  value       = azurerm_storage_account.shared.primary_connection_string
-  sensitive   = true
-}
-
-output "backups_container_name" {
-  description = "The name of the backups container"
-  value       = azurerm_storage_container.backups.name
-}
-
-output "logs_container_name" {
-  description = "The name of the logs container"
-  value       = azurerm_storage_container.logs.name
-}
-
-output "artifacts_container_name" {
-  description = "The name of the artifacts container"
-  value       = azurerm_storage_container.artifacts.name
-}
+# output "storage_account_name" {
+#   description = "The name of the storage account"
+#   value       = azurerm_storage_account.shared.name
+# }
+#
+# output "storage_account_primary_access_key" {
+#   description = "The primary access key for the storage account"
+#   value       = azurerm_storage_account.shared.primary_access_key
+#   sensitive   = true
+# }
+#
+# output "storage_account_primary_connection_string" {
+#   description = "The primary connection string for the storage account"
+#   value       = azurerm_storage_account.shared.primary_connection_string
+#   sensitive   = true
+# }
