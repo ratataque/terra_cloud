@@ -11,16 +11,6 @@ data "azurerm_resource_group" "main" {
   name = var.resource_group_name
 }
 
-resource "azurerm_container_registry" "main" {
-  name                = "${var.project_name}${var.environment}acr"
-  resource_group_name = data.azurerm_resource_group.main.name
-  location            = data.azurerm_resource_group.main.location
-  sku                 = var.acr_sku
-  admin_enabled       = true
-
-  tags = var.tags
-}
-
 resource "azurerm_mysql_flexible_server" "main" {
   name                   = "${var.project_name}-${var.environment}-mysql"
   resource_group_name    = data.azurerm_resource_group.main.name
@@ -77,9 +67,9 @@ resource "azurerm_linux_web_app" "main" {
 
     application_stack {
       docker_image_name        = "${var.docker_image}:${var.docker_image_tag}"
-      docker_registry_url      = "https://${azurerm_container_registry.main.login_server}"
-      docker_registry_username = azurerm_container_registry.main.admin_username
-      docker_registry_password = azurerm_container_registry.main.admin_password
+      docker_registry_url      = "https://${var.acr_login_server}"
+      docker_registry_username = var.acr_admin_username
+      docker_registry_password = var.acr_admin_password
     }
   }
 
@@ -102,7 +92,7 @@ resource "azurerm_linux_web_app" "main" {
 }
 
 resource "azurerm_role_assignment" "app_to_acr" {
-  scope                = azurerm_container_registry.main.id
+  scope                = var.acr_id
   role_definition_name = "AcrPull"
   principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
 }

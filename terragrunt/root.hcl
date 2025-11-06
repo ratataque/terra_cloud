@@ -2,6 +2,30 @@
 locals {
   env         = basename(get_terragrunt_dir())
   region      = get_env("AZURE_REGION", "France Central")
+  
+  # Project-wide configuration
+  resource_group_name = "rg-stg_1"
+  project_name        = "terracloud"
+  location            = "westeurope"
+  
+  # Database common configuration
+  db_admin_password = get_env("DB_ADMIN_PASSWORD", "TerraCloud2024!")
+  
+  # Docker configuration
+  docker_image_base = "app"
+  
+  # Common app settings
+  common_app_settings = {
+    "APP_NAME"    = "TerraCloud"
+    "APP_KEY"     = get_env("APP_KEY", "base64:PLACEHOLDER-CHANGE-BEFORE-APPLY")
+    "LOG_CHANNEL" = "stack"
+  }
+  
+  # Common tags
+  common_tags = {
+    CostCenter = "Engineering"
+  }
+  
   tags = {
     Environment = local.env
     ManagedBy   = "Terragrunt"

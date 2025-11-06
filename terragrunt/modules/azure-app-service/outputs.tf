@@ -13,17 +13,6 @@ output "app_service_name" {
   value       = azurerm_linux_web_app.main.name
 }
 
-output "acr_login_server" {
-  description = "The login server URL for the Azure Container Registry"
-  value       = azurerm_container_registry.main.login_server
-}
-
-output "acr_admin_username" {
-  description = "The admin username for the Azure Container Registry"
-  value       = azurerm_container_registry.main.admin_username
-  sensitive   = true
-}
-
 output "database_host" {
   description = "The FQDN of the MySQL Flexible Server"
   value       = azurerm_mysql_flexible_server.main.fqdn
