@@ -2,15 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   test:
     name: Laravel Tests
     runs-on: ubuntu-latest
-    
+
     services:
       mysql:
         image: mysql:8.0
@@ -28,7 +28,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: "8.2"
           extensions: mbstring, dom, fileinfo, mysql
           coverage: none
 
@@ -40,7 +40,7 @@ jobs:
 
       - name: Generate app key
         run: php artisan key:generate
-      
+
       - name: Run migrations
         env:
           DB_CONNECTION: mysql
@@ -64,7 +64,7 @@ jobs:
   lint:
     name: Code Quality
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -72,7 +72,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: "8.2"
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-progress --no-suggest
@@ -83,24 +83,25 @@ jobs:
 
   build:
     name: Build & Push Docker Image
+    environment: qa
     runs-on: ubuntu-latest
     needs: [test, lint]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       id-token: write
       contents: read
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Azure Login via OIDC
         uses: azure/login@v1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      
+
       - name: Get ACR credentials
         id: acr
         run: |
@@ -109,14 +110,14 @@ jobs:
           echo "::add-mask::$ACR_PASSWORD"
           echo "username=$ACR_USERNAME" >> $GITHUB_OUTPUT
           echo "password=$ACR_PASSWORD" >> $GITHUB_OUTPUT
-      
+
       - name: Login to Azure Container Registry
         uses: docker/login-action@v3
         with:
           registry: terracloudqaacr.azurecr.io
           username: ${{ steps.acr.outputs.username }}
           password: ${{ steps.acr.outputs.password }}
-      
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
