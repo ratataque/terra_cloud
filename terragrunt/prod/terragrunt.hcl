@@ -21,7 +21,7 @@ inputs = {
 
   db_name           = "terracloud_prod"
   db_admin_username = "sqladmin"
-  db_admin_password = get_env("DB_ADMIN_PASSWORD")
+  db_admin_password = get_env("DB_ADMIN_PASSWORD", "TerraCloud2024!")
   db_sku            = "GP_Standard_D2ds_v4"
   db_storage_gb     = 100
 
@@ -31,7 +31,7 @@ inputs = {
   app_settings = {
     "APP_NAME"    = "TerraCloud"
     "APP_ENV"     = "production"
-    "APP_KEY"     = get_env("APP_KEY")
+    "APP_KEY"     = get_env("APP_KEY", "base64:PLACEHOLDER-CHANGE-BEFORE-APPLY")
     "APP_DEBUG"   = "false"
     "APP_URL"     = "https://terracloud-prod-app.azurewebsites.net"
     "LOG_CHANNEL" = "stack"
