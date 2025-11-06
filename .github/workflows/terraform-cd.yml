@@ -1,12 +1,12 @@
 name: Terraform CD
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types:
-      - completed
+  push:
     branches:
       - main
+    paths:
+      - 'terragrunt/**'
+      - '.github/workflows/terraform-cd.yml'
   workflow_dispatch:
 
 permissions:
@@ -18,13 +18,13 @@ env:
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   ARM_USE_OIDC: true
+  TF_VAR_APP_KEY: ${{ secrets.TF_VAR_APP_KEY }}
 
 jobs:
   deploy-qa:
     name: Deploy QA Environment
     runs-on: ubuntu-latest
     environment: qa
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     
     steps:
       - name: Checkout

@@ -38,7 +38,7 @@ inputs = {
   db_sku            = "B_Standard_B1ms"
   db_storage_gb     = 20
 
-  docker_image     = "${dependency.shared.outputs.acr_login_server}/${include.root.locals.docker_image_base}"
+  docker_image     = "app"  # Just the image name, not the full path
   docker_image_tag = get_env("DOCKER_TAG", "latest")
 
   app_settings = merge(
