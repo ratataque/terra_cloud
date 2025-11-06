@@ -96,3 +96,22 @@ resource "azurerm_role_assignment" "app_to_acr" {
   role_definition_name = "AcrPull"
   principal_id         = azurerm_linux_web_app.main.identity[0].principal_id
 }
+
+# Create ACR webhook for this app service
+resource "azurerm_container_registry_webhook" "app" {
+  name                = "${var.project_name}${var.environment}hook"
+  registry_name       = split("/", var.acr_id)[8]  # Extract ACR name from resource ID
+  resource_group_name = data.azurerm_resource_group.main.name
+  location            = data.azurerm_resource_group.main.location
+
+  service_uri = "https://$${azurerm_linux_web_app.main.name}:${azurerm_linux_web_app.main.site_credential[0].password}@${azurerm_linux_web_app.main.name}.scm.azurewebsites.net/docker/hook"
+  status      = "enabled"
+  scope       = "app:*"
+  actions     = ["push"]
+
+  custom_headers = {
+    "Content-Type" = "application/json"
+  }
+
+  tags = var.tags
+}
