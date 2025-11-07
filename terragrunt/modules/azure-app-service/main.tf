@@ -104,10 +104,15 @@ resource "azurerm_container_registry_webhook" "app" {
   resource_group_name = data.azurerm_resource_group.main.name
   location            = data.azurerm_resource_group.main.location
 
-  service_uri = "https://" + "$" + azurerm_linux_web_app.main.name + ":" + azurerm_linux_web_app.main.site_credential[0].password + "@" + azurerm_linux_web_app.main.name + ".scm.azurewebsites.net/docker/hook"
-  status      = "enabled"
-  scope       = "app:latest"
-  actions     = ["push"]
+  service_uri = format(
+    "https://$%s:%s@%s.scm.azurewebsites.net/docker/hook",
+    azurerm_linux_web_app.main.name,
+    azurerm_linux_web_app.main.site_credential[0].password,
+    azurerm_linux_web_app.main.name
+  )
+  status  = "enabled"
+  scope   = "app:latest"
+  actions = ["push"]
 
   custom_headers = {
     "Content-Type" = "application/json"
