@@ -1,0 +1,31 @@
+# Terraform / Terragrunt
+.terraform/
+.terragrunt-cache/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.lock.hcl
+
+# Variables d'environnement sensibles
+.env.terraform
+*.env.local
+
+# Clés SSH
+*.pem
+*.key
+id_rsa*
+terracloud_rsa*
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

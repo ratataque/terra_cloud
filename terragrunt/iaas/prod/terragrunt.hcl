@@ -4,7 +4,7 @@ include "root" {
 }
 
 terraform {
-  source = "../../modules/azure-paas-app-service"
+  source = "../../modules/azure-iaas-app-service"
 }
 
 dependency "shared" {
@@ -24,7 +24,12 @@ inputs = {
     }
   )
 
-  app_service_plan_sku = "P1v3"
+  # VM Configuration (remplace App Service Plan du PaaS)
+  vm_size  = "Standard_D2s_v3"  # Taille de la VM : 2 vCPUs, 8 GB RAM (plus puissant pour prod)
+  vm_count = 3                  # 3 VMs pour meilleure haute disponibilité en production
+  
+  # Clé SSH pour accéder aux VMs (vous devez générer une clé SSH)
+  ssh_public_key = get_env("SSH_PUBLIC_KEY", "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... votre-cle-publique")
 
   # Reference shared ACR
   acr_login_server    = dependency.shared.outputs.acr_login_server
@@ -46,7 +51,7 @@ inputs = {
     {
       "APP_ENV"       = "production"
       "APP_DEBUG"     = "false"
-      "APP_URL"       = "https://terracloud-prod-app.azurewebsites.net"
+      "APP_URL"       = "http://load-balancer-ip"  # Sera remplacé par l'IP du Load Balancer après déploiement
       "LOG_LEVEL"     = "warning"
       "CACHE_DRIVER"  = "redis"
       "SESSION_DRIVER" = "redis"
