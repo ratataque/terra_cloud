@@ -4,11 +4,11 @@ include "root" {
 }
 
 terraform {
-  source = "../modules/azure-app-service"
+  source = "../../modules/azure-paas-app-service"
 }
 
 dependency "shared" {
-  config_path = "../shared"
+  config_path = "../../shared"
 }
 
 inputs = {
