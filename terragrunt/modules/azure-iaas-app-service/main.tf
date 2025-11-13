@@ -11,7 +11,9 @@ data "azurerm_resource_group" "main" {
   name = var.resource_group_name
 }
 
-# Virtual Network
+# -----------------------------
+# Réseau : VNet + Subnet + NSG
+# -----------------------------
 resource "azurerm_virtual_network" "main" {
   name                = "${var.project_name}-${var.environment}-vnet"
   address_space       = var.vnet_address_space
@@ -20,7 +22,6 @@ resource "azurerm_virtual_network" "main" {
   tags                = var.tags
 }
 
-# Subnet for VMs
 resource "azurerm_subnet" "app" {
   name                 = "${var.project_name}-${var.environment}-app-subnet"
   resource_group_name  = data.azurerm_resource_group.main.name
@@ -28,7 +29,6 @@ resource "azurerm_subnet" "app" {
   address_prefixes     = var.subnet_address_prefixes
 }
 
-# Network Security Group
 resource "azurerm_network_security_group" "app" {
   name                = "${var.project_name}-${var.environment}-nsg"
   location            = data.azurerm_resource_group.main.location
@@ -73,14 +73,31 @@ resource "azurerm_network_security_group" "app" {
   tags = var.tags
 }
 
-# Associate NSG with Subnet
 resource "azurerm_subnet_network_security_group_association" "app" {
   subnet_id                 = azurerm_subnet.app.id
   network_security_group_id = azurerm_network_security_group.app.id
 }
 
-# Public IP for Load Balancer
+# ------------------------------------------------------------------
+# Option SANS LB : une IP Publique par VM (si LB désactivé)
+# ------------------------------------------------------------------
+resource "azurerm_public_ip" "vm" {
+  count               = var.enable_load_balancer ? 0 : var.vm_count
+  name                = "${var.project_name}-${var.environment}-pip-${count.index}"
+  location            = data.azurerm_resource_group.main.location
+  resource_group_name = data.azurerm_resource_group.main.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  tags                = var.tags
+}
+
+# ------------------------------------------------------------------
+# Option AVEC LB : toutes les ressources du LB en count conditionnel
+# ------------------------------------------------------------------
+
+# IP publique du LB
 resource "azurerm_public_ip" "lb" {
+  count               = var.enable_load_balancer ? 1 : 0
   name                = "${var.project_name}-${var.environment}-lb-pip"
   location            = data.azurerm_resource_group.main.location
   resource_group_name = data.azurerm_resource_group.main.name
@@ -91,6 +108,7 @@ resource "azurerm_public_ip" "lb" {
 
 # Load Balancer
 resource "azurerm_lb" "main" {
+  count               = var.enable_load_balancer ? 1 : 0
   name                = "${var.project_name}-${var.environment}-lb"
   location            = data.azurerm_resource_group.main.location
   resource_group_name = data.azurerm_resource_group.main.name
@@ -98,40 +116,45 @@ resource "azurerm_lb" "main" {
 
   frontend_ip_configuration {
     name                 = "PublicIPAddress"
-    public_ip_address_id = azurerm_public_ip.lb.id
+    public_ip_address_id = azurerm_public_ip.lb[0].id
   }
 
   tags = var.tags
 }
 
-# Backend Address Pool
+# Backend pool
 resource "azurerm_lb_backend_address_pool" "main" {
-  loadbalancer_id = azurerm_lb.main.id
+  count           = var.enable_load_balancer ? 1 : 0
+  loadbalancer_id = azurerm_lb.main[0].id
   name            = "BackEndAddressPool"
 }
 
-# Health Probe
+# Health probe
 resource "azurerm_lb_probe" "http" {
-  loadbalancer_id = azurerm_lb.main.id
+  count           = var.enable_load_balancer ? 1 : 0
+  loadbalancer_id = azurerm_lb.main[0].id
   name            = "http-probe"
   protocol        = "Http"
   port            = 80
   request_path    = "/"
 }
 
-# Load Balancer Rule
+# Règle LB HTTP
 resource "azurerm_lb_rule" "http" {
-  loadbalancer_id                = azurerm_lb.main.id
-  name                           = "HTTPRule"
-  protocol                       = "Tcp"
-  frontend_port                  = 80
-  backend_port                   = 80
-  frontend_ip_configuration_name = "PublicIPAddress"
-  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.main.id]
-  probe_id                       = azurerm_lb_probe.http.id
+  count                           = var.enable_load_balancer ? 1 : 0
+  loadbalancer_id                 = azurerm_lb.main[0].id
+  name                            = "HTTPRule"
+  protocol                        = "Tcp"
+  frontend_port                   = 80
+  backend_port                    = 80
+  frontend_ip_configuration_name  = "PublicIPAddress"
+  backend_address_pool_ids        = [azurerm_lb_backend_address_pool.main[0].id]
+  probe_id                        = azurerm_lb_probe.http[0].id
 }
 
-# Network Interfaces
+# -------------------------------------------------
+# NICs : attachent une PIP si pas de LB, sinon rien
+# -------------------------------------------------
 resource "azurerm_network_interface" "vm" {
   count               = var.vm_count
   name                = "${var.project_name}-${var.environment}-nic-${count.index}"
@@ -142,20 +165,23 @@ resource "azurerm_network_interface" "vm" {
     name                          = "internal"
     subnet_id                     = azurerm_subnet.app.id
     private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = var.enable_load_balancer ? null : azurerm_public_ip.vm[count.index].id
   }
 
   tags = var.tags
 }
 
-# Associate NICs with Backend Pool
+# Association NIC ↔ backend pool du LB (si LB activé)
 resource "azurerm_network_interface_backend_address_pool_association" "vm" {
-  count                   = var.vm_count
+  count                   = var.enable_load_balancer ? var.vm_count : 0
   network_interface_id    = azurerm_network_interface.vm[count.index].id
   ip_configuration_name   = "internal"
-  backend_address_pool_id = azurerm_lb_backend_address_pool.main.id
+  backend_address_pool_id = azurerm_lb_backend_address_pool.main[0].id
 }
 
-# Virtual Machines
+# -----------------------------
+# Machines virtuelles Linux
+# -----------------------------
 resource "azurerm_linux_virtual_machine" "vm" {
   count               = var.vm_count
   name                = "${var.project_name}-${var.environment}-vm-${count.index}"
@@ -205,7 +231,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
   tags = var.tags
 }
 
-# Role Assignment for VMs to pull from ACR
+# Autoriser la VM à pull depuis l’ACR
 resource "azurerm_role_assignment" "vm_to_acr" {
   count                = var.vm_count
   scope                = var.acr_id
@@ -213,7 +239,9 @@ resource "azurerm_role_assignment" "vm_to_acr" {
   principal_id         = azurerm_linux_virtual_machine.vm[count.index].identity[0].principal_id
 }
 
-# MySQL Flexible Server
+# -----------------------------
+# Base de données MySQL
+# -----------------------------
 resource "azurerm_mysql_flexible_server" "main" {
   name                   = "${var.project_name}-${var.environment}-mysql"
   resource_group_name    = data.azurerm_resource_group.main.name
@@ -230,7 +258,6 @@ resource "azurerm_mysql_flexible_server" "main" {
   tags = var.tags
 }
 
-# MySQL Firewall Rule - Allow Azure Services
 resource "azurerm_mysql_flexible_server_firewall_rule" "azure_services" {
   name                = "AllowAzureServices"
   resource_group_name = data.azurerm_resource_group.main.name
@@ -239,7 +266,6 @@ resource "azurerm_mysql_flexible_server_firewall_rule" "azure_services" {
   end_ip_address      = "0.0.0.0"
 }
 
-# MySQL Firewall Rule - Allow VNet
 resource "azurerm_mysql_flexible_server_firewall_rule" "vnet" {
   name                = "AllowVNet"
   resource_group_name = data.azurerm_resource_group.main.name
@@ -248,7 +274,6 @@ resource "azurerm_mysql_flexible_server_firewall_rule" "vnet" {
   end_ip_address      = cidrhost(var.subnet_address_prefixes[0], -1)
 }
 
-# MySQL Database
 resource "azurerm_mysql_flexible_database" "main" {
   name                = var.db_name
   resource_group_name = data.azurerm_resource_group.main.name

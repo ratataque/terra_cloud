@@ -25,8 +25,10 @@ inputs = {
   )
 
   # VM Configuration (remplace App Service Plan du PaaS)
-  vm_size  = "Standard_B2s"  # Taille de la VM : 2 vCPUs, 4 GB RAM
-  vm_count = 2                # Nombre de VMs pour la haute disponibilité
+  vm_size  = "Standard_B1ls"# 1 vCPU, 1 GB RAM
+  vm_count = 1               # ne seule VM
+  enable_load_balancer = false # (par défaut false, mais explicite)
+
   
   # Clé SSH pour accéder aux VMs (vous devez générer une clé SSH)
   ssh_public_key = get_env("SSH_PUBLIC_KEY", "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... votre-cle-publique")

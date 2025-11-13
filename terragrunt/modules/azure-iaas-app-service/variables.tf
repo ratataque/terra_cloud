@@ -29,13 +29,13 @@ variable "tags" {
 variable "vm_size" {
   description = "The size of the Virtual Machine"
   type        = string
-  default     = "Standard_B2s"
+  default     = "Standard_B1ls"
 }
 
 variable "vm_count" {
   description = "Number of VMs to create"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "admin_username" {
@@ -131,4 +131,9 @@ variable "app_settings" {
   description = "A map of application settings"
   type        = map(string)
   default     = {}
+}
+variable "enable_load_balancer" {
+  description = "Create an Azure Load Balancer. Must be false where policy denies LB."
+  type        = bool
+  default     = false
 }

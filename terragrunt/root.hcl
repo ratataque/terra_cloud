@@ -17,7 +17,8 @@ locals {
   # Common app settings
   common_app_settings = {
     "APP_NAME"    = "TerraCloud"
-    "APP_KEY"     = get_env("TF_VAR_APP_KEY", "base64:PLACEHOLDER-CHANGE-BEFORE-APPLY")
+    "
+    "     = get_env("TF_VAR_APP_KEY", "base64:PLACEHOLDER-CHANGE-BEFORE-APPLY")
     "LOG_CHANNEL" = "stack"
   }
   
