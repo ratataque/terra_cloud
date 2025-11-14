@@ -3,34 +3,21 @@ package_update: true
 package_upgrade: true
 
 packages:
-  - docker.io
-  - docker-compose
   - nginx
   - curl
 
 write_files:
-  - path: /etc/docker/daemon.json
-    content: |
-      {
-        "log-driver": "json-file",
-        "log-opts": {
-          "max-size": "10m",
-          "max-file": "3"
-        }
-      }
-  
   - path: /etc/nginx/sites-available/app
     content: |
       server {
           listen 80;
           server_name _;
           
+          root /var/www/html;
+          index index.html;
+          
           location / {
-              proxy_pass http://localhost:8080;
-              proxy_set_header Host $host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
+              try_files $uri $uri/ =404;
           }
           
           location /health {
@@ -40,66 +27,61 @@ write_files:
           }
       }
   
-  - path: /opt/app/.env
+  - path: /var/www/html/index.html
     content: |
-      DB_CONNECTION=mysql
-      DB_HOST=${db_host}
-      DB_PORT=3306
-      DB_DATABASE=${db_name}
-      DB_USERNAME=${db_username}
-      DB_PASSWORD=${db_password}
-      %{ for key, value in jsondecode(app_settings) ~}
-      ${key}=${value}
-      %{ endfor ~}
-
-  - path: /opt/app/docker-compose.yml
-    content: |
-      version: '3.8'
-      services:
-        app:
-          image: ${acr_login_server}/${docker_image}:${docker_image_tag}
-          container_name: terracloud-app
-          restart: always
-          ports:
-            - "8080:80"
-          env_file:
-            - .env
-          healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-            interval: 30s
-            timeout: 10s
-            retries: 3
-            start_period: 40s
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Test - TerraCloud</title>
+          <style>
+              body {
+                  font-family: Arial, sans-serif;
+                  display: flex;
+                  justify-content: center;
+                  align-items: center;
+                  height: 100vh;
+                  margin: 0;
+                  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                  color: white;
+              }
+              .container {
+                  text-align: center;
+                  padding: 2rem;
+                  background: rgba(255, 255, 255, 0.1);
+                  border-radius: 10px;
+                  backdrop-filter: blur(10px);
+              }
+              h1 {
+                  font-size: 3rem;
+                  margin: 0;
+              }
+              p {
+                  font-size: 1.2rem;
+                  margin-top: 1rem;
+              }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <h1>🧪 Page de Test</h1>
+              <p>TerraCloud IaaS - VM: $(hostname)</p>
+              <p>Fichier statique servi par Nginx</p>
+          </div>
+      </body>
+      </html>
+  
 
 runcmd:
-  # Enable and start Docker
-  - systemctl enable docker
-  - systemctl start docker
-  
-  # Add user to docker group
-  - usermod -aG docker azureuser
-  
-  # Login to Azure Container Registry
-  - echo "${acr_admin_password}" | docker login ${acr_login_server} -u ${acr_admin_username} --password-stdin
+  # Créer le répertoire pour les fichiers statiques
+  - mkdir -p /var/www/html
+  - chown -R www-data:www-data /var/www/html
   
   # Configure Nginx
   - rm -f /etc/nginx/sites-enabled/default
   - ln -sf /etc/nginx/sites-available/app /etc/nginx/sites-enabled/app
   - systemctl enable nginx
   - systemctl restart nginx
-  
-  # Start application
-  - cd /opt/app
-  - docker-compose pull
-  - docker-compose up -d
-  
-  # Wait for app to be healthy
-  - sleep 30
-  
-  # Run database migrations (only on first VM)
-  - |
-    if [ "$(hostname)" = "*-vm-0" ]; then
-      docker exec terracloud-app php artisan migrate --force
-    fi
 
-final_message: "TerraCloud VM is ready! Application should be accessible via the load balancer."
+final_message: "TerraCloud VM is ready! Test page should be accessible via nginx."
