@@ -83,7 +83,7 @@ variable "db_admin_password" {
 variable "db_sku" {
   description = "The SKU for the MySQL Flexible Server"
   type        = string
-  default     = "B_Standard_B1ms"
+  default     = "B_Standard_B1ls"
 }
 
 variable "db_storage_gb" {

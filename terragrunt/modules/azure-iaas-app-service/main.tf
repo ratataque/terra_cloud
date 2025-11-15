@@ -187,7 +187,8 @@ resource "azurerm_linux_virtual_machine" "vm" {
   name                = "${var.project_name}-${var.environment}-vm-${count.index}"
   resource_group_name = data.azurerm_resource_group.main.name
   location            = data.azurerm_resource_group.main.location
-  size                = var.vm_size
+  size                = "Standard_B1ls"
+  # size                = var.vm_size
   admin_username      = var.admin_username
 
   network_interface_ids = [
