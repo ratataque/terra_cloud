@@ -55,7 +55,7 @@ write_files:
 
         app:
           # Placeholder: image ACR – la vraie CD sera faite par Ansible + GitHub Actions
-          image: ${acr_login_server}/${docker_image}:${docker_image_tag}
+          image: terracloudsharedacr.azurecr.io/app:latest
           container_name: app
           restart: unless-stopped
           env_file:
