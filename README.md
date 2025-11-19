@@ -13,6 +13,7 @@ This repository contains **only the application code**. Infrastructure and deplo
 **Workflow**: `.github/workflows/ci.yml`
 
 On every push to `main`:
+
 1. ✅ Run tests (PHPUnit + MySQL)
 2. ✅ Run linting (PHP CodeSniffer)
 3. 🏗️ Build Docker image
@@ -24,10 +25,11 @@ On every push to `main`:
 **Semantic Versioning** is automated:
 
 - Bump **major**: Include `(MAJOR)` in commit message
-- Bump **minor**: Include `(MINOR)` in commit message  
+- Bump **minor**: Include `(MINOR)` in commit message
 - Bump **patch**: Default for all other commits
 
 Example:
+
 ```bash
 git commit -m "feat: add feature (MINOR)"
 git commit -m "fix: resolve bug"
@@ -37,6 +39,7 @@ git commit -m "breaking: redesign API (MAJOR)"
 ## GitHub Secrets Required
 
 **Repository Secrets**:
+
 - `AZURE_CLIENT_ID` - Service Principal Client ID
 - `AZURE_TENANT_ID` - Azure AD Tenant ID
 - `AZURE_SUBSCRIPTION_ID` - Azure Subscription ID
@@ -44,6 +47,7 @@ git commit -m "breaking: redesign API (MAJOR)"
 - `INFRA_REPO_PAT` - (Optional) GitHub PAT for triggering deployments
 
 **Variables:**
+
 - `INFRA_REPO` - (Optional) e.g., `username/terra_cloud_infra`
 
 ## Local Development
