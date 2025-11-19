@@ -1,12 +1,18 @@
-name: CI
+name: CI - Build & Push
 
 on:
   push:
     branches: [main]
     paths-ignore:
-      - 'terragrunt/**'
+      - '**.md'
+      - '.github/**'
   pull_request:
     branches: [main]
+
+permissions:
+  contents: write
+  id-token: write
+  pull-requests: write
 
 jobs:
   test:
@@ -91,7 +97,10 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       id-token: write
-      contents: read
+      contents: write
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+      image_tag: ${{ steps.semver.outputs.version }}
     
     env:
       ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -102,6 +111,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate semantic version
+        id: semver
+        uses: paulhatch/semantic-version@v5.3.0
+        with:
+          tag_prefix: "v"
+          major_pattern: "(MAJOR)"
+          minor_pattern: "(MINOR)"
+          version_format: "${major}.${minor}.${patch}"
+          bump_each_commit: true
+
+      - name: Create Git Tag
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag v${{ steps.semver.outputs.version }}
+          git push origin v${{ steps.semver.outputs.version }}
 
       - name: Azure Login via OIDC
         uses: azure/login@v1
@@ -110,45 +138,43 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.5.7
-          terraform_wrapper: false
-      
-      - name: Setup Terragrunt
-        run: |
-          wget -q https://github.com/gruntwork-io/terragrunt/releases/download/v0.54.0/terragrunt_linux_amd64
-          chmod +x terragrunt_linux_amd64
-          sudo mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
-
-      - name: Get ACR credentials from shared infrastructure
-        id: acr
-        working-directory: terragrunt/shared
-        run: |
-          ACR_NAME=$(terragrunt output -raw acr_name)
-          ACR_LOGIN_SERVER=$(terragrunt output -raw acr_login_server)
-          ACR_USERNAME=$(terragrunt output -raw acr_admin_username)
-          ACR_PASSWORD=$(terragrunt output -raw acr_admin_password)
-          
-          echo "::add-mask::$ACR_PASSWORD"
-          echo "name=$ACR_NAME" >> $GITHUB_OUTPUT
-          echo "login_server=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
-          echo "username=$ACR_USERNAME" >> $GITHUB_OUTPUT
-          echo "password=$ACR_PASSWORD" >> $GITHUB_OUTPUT
-
       - name: Login to Azure Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ steps.acr.outputs.login_server }}
-          username: ${{ steps.acr.outputs.username }}
-          password: ${{ steps.acr.outputs.password }}
+        run: |
+          az acr login --name ${{ secrets.ACR_NAME }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: app
           push: true
           tags: |
-            ${{ steps.acr.outputs.login_server }}/app:latest
-            ${{ steps.acr.outputs.login_server }}/app:${{ github.sha }}
+            ${{ secrets.ACR_NAME }}.azurecr.io/app:${{ steps.semver.outputs.version }}
+            ${{ secrets.ACR_NAME }}.azurecr.io/app:${{ steps.semver.outputs.version }}-${{ github.sha }}
+            ${{ secrets.ACR_NAME }}.azurecr.io/app:latest
+
+      - name: Deployment Summary
+        run: |
+          echo "## Build Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.semver.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Git SHA**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **ACR**: ${{ secrets.ACR_NAME }}.azurecr.io" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pushed Images:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.ACR_NAME }}.azurecr.io/app:${{ steps.semver.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.ACR_NAME }}.azurecr.io/app:${{ steps.semver.outputs.version }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.ACR_NAME }}.azurecr.io/app:latest\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Trigger deployment to QA (optional)
+        if: vars.INFRA_REPO != ''
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.INFRA_REPO_PAT }}
+          repository: ${{ vars.INFRA_REPO }}
+          event-type: deploy-app
+          client-payload: |
+            {
+              "environment": "qa",
+              "image_tag": "${{ steps.semver.outputs.version }}",
+              "git_sha": "${{ github.sha }}"
+            }
