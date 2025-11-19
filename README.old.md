@@ -1,6 +1,244 @@
-# TerraCloud Deployment Guide
+# TerraCloud - Azure Deployment Guide
 
-Complete workflow guide for deploying the TerraCloud application to Azure using Terragrunt and Terraform.
+Complete infrastructure setup reflecting our actual implementation with Terragrunt, ACR webhooks, and automated CI/CD.
+
+## Quick Summary
+
+**What we built:**
+- Shared ACR for Docker images  
+- QA environment with App Service + MySQL
+- GitHub Actions CI/CD with OIDC authentication
+- ACR webhook for instant deployments (<30s)
+- Automatic database migrations on container start
+
+**Deploy time:** 3-4 minutes from code push to live
+
+---
+
+## Architecture
+
+```
+GitHub Push
+    ↓
+CI: Build Docker → Push to ACR  
+    ↓
+ACR Webhook triggers App Service
+    ↓
+App Service pulls :latest
+    ↓  
+Container starts → Migrations run → Apache starts
+    ↓
+✅ Live in 3-4 minutes
+```
+
+---
+
+## Prerequisites
+
+**Tools:**
+- Azure CLI
+- Terraform 1.5.7+
+- Terragrunt 0.54.0+
+
+**Azure:**
+- Subscription with Contributor role OR
+- Owner on existing resource group (`rg-stg_1`)
+
+---
+
+## Setup Steps
+
+### 1. Azure Service Principal (OIDC)
+
+```bash
+SUBSCRIPTION_ID="your-sub-id"
+GITHUB_ORG="your-username"
+GITHUB_REPO="terra_cloud"
+
+# Create app
+APP_ID=$(az ad app create --display-name "TerraCloud-GitHub-OIDC" --query appId -o tsv)
+az ad sp create --id $APP_ID
+SP_ID=$(az ad sp list --display-name "TerraCloud-GitHub-OIDC" --query "[0].id" -o tsv)
+
+# Grant permissions
+az role assignment create --assignee $SP_ID --role Contributor \
+  --scope "/subscriptions/$SUBSCRIPTION_ID"
+
+# OIDC federation
+az ad app federated-credential create --id $APP_ID --parameters '{
+  "name": "GitHub-Main",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:'$GITHUB_ORG'/'$GITHUB_REPO':ref:refs/heads/main",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+TENANT_ID=$(az account show --query tenantId -o tsv)
+echo "AZURE_CLIENT_ID: $APP_ID"
+echo "AZURE_TENANT_ID: $TENANT_ID"  
+echo "AZURE_SUBSCRIPTION_ID: $SUBSCRIPTION_ID"
+```
+
+### 2. GitHub Secrets
+
+**Repository secrets:**
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+**Environment "qa" secret:**
+- `TF_VAR_APP_KEY` (generate with `php artisan key:generate --show`)
+
+### 3. MySQL SSL Configuration
+
+After first deploy:
+```bash
+az mysql flexible-server parameter set \
+  --resource-group rg-stg_1 \
+  --server-name terracloud-qa-mysql \
+  --name require_secure_transport \
+  --value OFF
+```
+
+### 4. Fix ACR Webhook (Important!)
+
+The webhook needs URL-encoded credentials:
+```bash
+WEBHOOK_URL=$(az webapp deployment container show-cd-url \
+  --name terracloud-qa-app --resource-group rg-stg_1 --query 'CI_CD_URL' -o tsv)
+ENCODED_URL=$(echo "$WEBHOOK_URL" | sed 's/\$/%24/g')
+
+az acr webhook update --name terracloudqahook \
+  --registry terracloudsharedacr --resource-group rg-stg_1 --uri "$ENCODED_URL"
+```
+
+---
+
+## Infrastructure Components
+
+**Shared** (`terragrunt/shared/`):
+- ACR (Standard SKU)
+
+**QA** (`terragrunt/qa/`):
+- App Service Plan B1
+- Linux Web App (Docker)
+- MySQL Flexible Server B_Standard_B1ms
+- Database terracloud_qa
+- ACR Webhook
+- Managed Identity with AcrPull
+
+---
+
+## CI/CD Workflows
+
+### CI (`.github/workflows/ci.yml`)
+- **Trigger:** Push to main (non-terragrunt files)
+- **Does:** Build Docker → Push to ACR
+- **Tags:** `app:latest`, `app:<sha>`
+
+### CD (`.github/workflows/terraform-cd.yml`)
+- **Trigger:** Push to main (`terragrunt/**` files) or manual
+- **Does:** Terragrunt plan → apply
+
+---
+
+## Auto-Deployment
+
+**Two mechanisms:**
+
+1. **ACR Webhook** (instant):
+   - ACR calls App Service on push
+   - App pulls new image
+   - ~30 seconds
+
+2. **Polling** (fallback):
+   - `DOCKER_ENABLE_CI=true` 
+   - Polls every 5-10 min
+   - Azure-managed
+
+---
+
+## Environment Variables
+
+Auto-configured by Terraform:
+```
+DOCKER_ENABLE_CI=true
+DB_CONNECTION=mysql
+DB_HOST=terracloud-qa-mysql.mysql.database.azure.com
+DB_PORT=3306
+DB_DATABASE=terracloud_qa
+DB_USERNAME=dbadmin
+DB_PASSWORD=<terraform>
+APP_KEY=<github-secret>
+```
+
+---
+
+## Monitoring
+
+```bash
+# Logs
+az webapp log download --name terracloud-qa-app \
+  --resource-group rg-stg_1 --log-file logs.zip
+
+# Webhook events
+az acr webhook list-events --name terracloudqahook \
+  --registry terracloudsharedacr --resource-group rg-stg_1 -o table
+
+# MySQL status
+az mysql flexible-server show --resource-group rg-stg_1 \
+  --name terracloud-qa-mysql --query "{name:name, state:state}"
+```
+
+---
+
+## Troubleshooting
+
+### Webhook 401 Error
+**Fix:** URL-encode `$` character (see Setup Step 4)
+
+### App 500 Error
+**Check:** APP_KEY is set properly
+```bash
+az webapp config appsettings list --name terracloud-qa-app \
+  --resource-group rg-stg_1 --query "[?name=='APP_KEY']"
+```
+
+### MySQL Timeout
+**Fix:** Start server
+```bash
+az mysql flexible-server start --resource-group rg-stg_1 \
+  --name terracloud-qa-mysql
+```
+
+### Container Not Updating
+**Fix:** Manual restart
+```bash
+az webapp restart --name terracloud-qa-app --resource-group rg-stg_1
+```
+
+---
+
+## Cost (~€30-50/month)
+- App Service B1: €12
+- MySQL B1ms: €15-25  
+- ACR Standard: €5
+- Other: €5
+
+**Tip:** Stop MySQL when unused:
+```bash
+az mysql flexible-server stop --resource-group rg-stg_1 \
+  --name terracloud-qa-mysql
+```
+
+---
+
+## Resources
+
+- [Terragrunt Docs](https://terragrunt.gruntwork.io/)
+- [Azure App Service Containers](https://learn.microsoft.com/azure/app-service/configure-custom-container)
+- [ACR Webhooks](https://learn.microsoft.com/azure/container-registry/container-registry-webhook)
+- [GitHub OIDC Azure](https://docs.github.com/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-azure)
+
 
 ## Overview
 
