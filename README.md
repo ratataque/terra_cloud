@@ -60,4 +60,4 @@ php artisan key:generate
 php artisan test
 ```
 
-For infrastructure, see **terra_cloud_infra** repository.
+For infrastructure, see **terra_cloud_infra** repository..
