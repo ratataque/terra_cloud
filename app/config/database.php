@@ -54,10 +54,12 @@ return [
 			'strict' => true,
 			'engine' => null,
 			'options' => extension_loaded('pdo_mysql') ? array_filter([
+				// Optional: Only added if the ENV variable exists and is not empty
 				PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-			], function ($value) {
-				return !empty($value);
-			}) : [],
+			]) + [
+				// Mandatory: Always added, never filtered
+				PDO::ATTR_PERSISTENT => true,
+			] : [],
 		],
 		'pgsql' => [
 			'driver' => 'pgsql',
