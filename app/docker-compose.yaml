@@ -31,7 +31,7 @@ services:
             DB_DATABASE: app_database
             DB_USERNAME: app_user
             DB_PASSWORD: app_password
-            MYSQL_ATTR_SSL_CA: /home/site/wwwroot/storage/certs/DigiCertGlobalRootG2.crt.pem
+            #MYSQL_ATTR_SSL_CA: /home/site/wwwroot/storage/certs/DigiCertGlobalRootG2.crt.pem
         depends_on:
             - db
         labels:
