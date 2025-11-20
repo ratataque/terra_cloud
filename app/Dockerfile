@@ -1,6 +1,10 @@
 # Utilisez une image Docker officielle pour PHP 7.4 avec Apache
 FROM php:8.2.8-apache
 
+# Declare build argument and set as environment variable
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 # Installez les extensions PHP nécessaires
 RUN docker-php-ext-install pdo_mysql
 
