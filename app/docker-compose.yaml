@@ -31,9 +31,10 @@ services:
             DB_DATABASE: app_database
             DB_USERNAME: app_user
             DB_PASSWORD: app_password
-            #MYSQL_ATTR_SSL_CA: /home/site/wwwroot/storage/certs/DigiCertGlobalRootG2.crt.pem
+            MYSQL_ATTR_SSL_CA:
         depends_on:
-            - db
+            db:
+                condition: service_healthy
         labels:
             - "traefik.enable=true"
             - "traefik.http.routers.app.rule=HostRegexp(`.*`)"
