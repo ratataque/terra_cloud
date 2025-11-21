@@ -26,13 +26,7 @@ jobs:
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       environment: qa
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      ACR_NAME: ${{ secrets.ACR_NAME }}
-      INFRA_REPO_PAT: ${{ secrets.INFRA_REPO_PAT }}
-      INFRA_REPO: ${{ secrets.INFRA_REPO }}
+    secrets: inherit
 
   deploy-prod:
     name: Deploy to PROD
@@ -41,10 +35,4 @@ jobs:
     uses: ./.github/workflows/reusable-deploy.yml
     with:
       environment: prod
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      ACR_NAME: ${{ secrets.ACR_NAME }}
-      INFRA_REPO_PAT: ${{ secrets.INFRA_REPO_PAT }}
-      INFRA_REPO: ${{ secrets.INFRA_REPO }}
+    secrets: inherit

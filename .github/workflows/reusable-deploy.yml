@@ -19,19 +19,6 @@ on:
       image_tag:
         description: 'Docker image tag'
         value: ${{ jobs.deploy.outputs.image_tag }}
-    secrets:
-      AZURE_CLIENT_ID:
-        required: true
-      AZURE_SUBSCRIPTION_ID:
-        required: true
-      AZURE_TENANT_ID:
-        required: true
-      ACR_NAME:
-        required: true
-      INFRA_REPO_PAT:
-        required: false
-      INFRA_REPO:
-        required: false
 
 jobs:
   deploy:
