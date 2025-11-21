@@ -102,7 +102,7 @@ jobs:
               uses: peter-evans/repository-dispatch@v2
               with:
                   token: ${{ secrets.INFRA_REPO_PAT }}
-                  repository: ${{ secrets.INFRA_REPO }}
+                  repository: ${{ vars.INFRA_REPO }}
                   event-type: deploy-app
                   client-payload: |
                       {
