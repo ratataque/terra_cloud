@@ -18,12 +18,17 @@ jobs:
     name: Run Tests
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     uses: ./.github/workflows/reusable-test.yml
+    permissions:
+      contents: read
 
   deploy-qa:
     name: Deploy to QA
     needs: test
     if: github.ref == 'refs/heads/qa' && github.event_name == 'push'
     uses: ./.github/workflows/reusable-deploy.yml
+    permissions:
+      contents: write
+      id-token: write
     with:
       environment: qa
     secrets: inherit
@@ -33,6 +38,9 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     uses: ./.github/workflows/reusable-deploy.yml
+    permissions:
+      contents: write
+      id-token: write
     with:
       environment: prod
     secrets: inherit
