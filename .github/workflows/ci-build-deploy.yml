@@ -1,0 +1,228 @@
+name: CI - Build & Deploy
+
+on:
+  push:
+    branches: [qa, main]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches: [qa, main]
+
+permissions:
+  contents: write
+  id-token: write
+  pull-requests: write
+
+jobs:
+  test:
+    name: Laravel Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mbstring, dom, fileinfo, mysql
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Copy .env
+        run: php -r "file_exists('.env') || copy('.env.example', '.env');"
+
+      - name: Generate app key
+        run: php artisan key:generate
+
+      - name: Run migrations
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: password
+        run: php artisan migrate --force
+
+      - name: Run PHPUnit tests
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: password
+        run: php artisan test
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Check code style
+        run: vendor/bin/phpcs || echo "Add phpcs to your project with 'composer require --dev squizlabs/php_codesniffer'"
+        continue-on-error: true
+
+  build_and_deploy:
+    name: Build & Deploy
+    # On ne build/deploy que sur push (pas sur PR)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+
+    # Un seul job, mais qui s’adapte à la branche grâce à la matrix
+    strategy:
+      matrix:
+        include:
+          - branch: qa
+            environment: qa
+            is_prod: false
+          - branch: main
+            environment: prod
+            is_prod: true
+
+    # On n’exécute que la ligne de matrix correspondant à la branche courante
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', matrix.branch)
+
+    environment: ${{ matrix.environment }}
+
+    permissions:
+      id-token: write
+      contents: write
+
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_USE_OIDC: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth 0 pour permettre le calcul de version en prod
+          fetch-depth: 0
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to Azure Container Registry
+        run: |
+          az acr login --name ${{ secrets.ACR_NAME }}
+
+      # Calcul de version uniquement pour la PROD (branche main)
+      - name: Calculate semantic version
+        id: semver
+        if: matrix.is_prod == true
+        uses: paulhatch/semantic-version@v5.3.0
+        with:
+          tag_prefix: "v"
+          major_pattern: "(MAJOR)"
+          minor_pattern: "(MINOR)"
+          version_format: "${major}.${minor}.${patch}"
+          bump_each_commit: true
+
+      - name: Create Git Tag
+        if: matrix.is_prod == true
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag v${{ steps.semver.outputs.version }}
+          git push origin v${{ steps.semver.outputs.version }}
+
+      # Préparer toutes les variables (tags, version, payload) pour QA et PROD
+      - name: Prepare metadata (tags, version, payload)
+        id: meta
+        run: |
+          if [ "${{ matrix.is_prod }}" = "true" ]; then
+            version="${{ steps.semver.outputs.version }}"
+            echo "version=${version}" >> $GITHUB_OUTPUT
+            echo "image_tag=${version}" >> $GITHUB_OUTPUT
+            echo "tag1=${{ secrets.ACR_NAME }}.azurecr.io/app:${version}" >> $GITHUB_OUTPUT
+            echo "tag2=${{ secrets.ACR_NAME }}.azurecr.io/app:${version}-${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "tag3=${{ secrets.ACR_NAME }}.azurecr.io/app:latest" >> $GITHUB_OUTPUT
+          else
+            version="qa-${GITHUB_SHA}"
+            echo "version=${version}" >> $GITHUB_OUTPUT
+            echo "image_tag=${version}" >> $GITHUB_OUTPUT
+            echo "tag1=${{ secrets.ACR_NAME }}.azurecr.io/app:qa-${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "tag2=${{ secrets.ACR_NAME }}.azurecr.io/app:qa-latest" >> $GITHUB_OUTPUT
+            # troisième tag optionnel, ici on le met identique au 2 pour éviter un tag vide
+            echo "tag3=${{ secrets.ACR_NAME }}.azurecr.io/app:qa" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: app
+          push: true
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+          tags: |
+            ${{ steps.meta.outputs.tag1 }}
+            ${{ steps.meta.outputs.tag2 }}
+            ${{ steps.meta.outputs.tag3 }}
+
+      - name: Deployment Summary
+        run: |
+          echo "## Build Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ matrix.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ matrix.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version / Image tag**: ${{ steps.meta.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Git SHA**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **ACR**: ${{ secrets.ACR_NAME }}.azurecr.io" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pushed Images:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ steps.meta.outputs.tag1 }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ steps.meta.outputs.tag2 }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ steps.meta.outputs.tag3 }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Trigger deployment (Infra repo)
+        if: vars.INFRA_REPO != ''
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.INFRA_REPO_PAT }}
+          repository: ${{ vars.INFRA_REPO }}
+          event-type: deploy-app
+          client-payload: |
+            {
+              "environment": "${{ matrix.environment }}",
+              "image_tag": "${{ steps.meta.outputs.image_tag }}",
+              "git_sha": "${{ github.sha }}"
+            }
