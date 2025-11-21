@@ -1,0 +1,126 @@
+name: Reusable Deploy Workflow
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Deployment environment (qa or prod)'
+      version_format:
+        required: false
+        type: string
+        default: "${major}.${minor}.${patch}"
+        description: 'Semantic version format'
+    outputs:
+      version:
+        description: 'Generated semantic version'
+        value: ${{ jobs.deploy.outputs.version }}
+      image_tag:
+        description: 'Docker image tag'
+        value: ${{ jobs.deploy.outputs.image_tag }}
+    secrets:
+      AZURE_CLIENT_ID:
+        required: true
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+      AZURE_TENANT_ID:
+        required: true
+      ACR_NAME:
+        required: true
+      INFRA_REPO_PAT:
+        required: false
+      INFRA_REPO:
+        required: false
+
+jobs:
+  deploy:
+    name: Build & Push to ${{ inputs.environment }}
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+      image_tag: ${{ steps.semver.outputs.version }}
+    
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_USE_OIDC: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate semantic version
+        id: semver
+        uses: paulhatch/semantic-version@v5.3.0
+        with:
+          tag_prefix: "v"
+          major_pattern: "(MAJOR)"
+          minor_pattern: "(MINOR)"
+          version_format: ${{ inputs.version_format }}
+          bump_each_commit: true
+
+      - name: Create Git Tag
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag v${{ steps.semver.outputs.version }}-${{ inputs.environment }}
+          git push origin v${{ steps.semver.outputs.version }}-${{ inputs.environment }}
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to Azure Container Registry
+        run: |
+          az acr login --name ${{ secrets.ACR_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: app
+          push: true
+          build-args: |
+            APP_VERSION=${{ steps.semver.outputs.version }}
+          tags: |
+            ${{ secrets.ACR_NAME }}.azurecr.io/app:${{ steps.semver.outputs.version }}-${{ inputs.environment }}
+            ${{ secrets.ACR_NAME }}.azurecr.io/app:${{ steps.semver.outputs.version }}-${{ inputs.environment }}-${{ github.sha }}
+            ${{ secrets.ACR_NAME }}.azurecr.io/app:latest-${{ inputs.environment }}
+
+      - name: Deployment Summary
+        run: |
+          echo "## Build Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.semver.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Git SHA**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **ACR**: ${{ secrets.ACR_NAME }}.azurecr.io" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pushed Images:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.ACR_NAME }}.azurecr.io/app:${{ steps.semver.outputs.version }}-${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.ACR_NAME }}.azurecr.io/app:${{ steps.semver.outputs.version }}-${{ inputs.environment }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.ACR_NAME }}.azurecr.io/app:latest-${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Trigger deployment
+        if: secrets.INFRA_REPO_PAT != '' && secrets.INFRA_REPO != ''
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.INFRA_REPO_PAT }}
+          repository: ${{ secrets.INFRA_REPO }}
+          event-type: deploy-app
+          client-payload: |
+            {
+              "environment": "${{ inputs.environment }}",
+              "image_tag": "${{ steps.semver.outputs.version }}",
+              "git_sha": "${{ github.sha }}"
+            }
