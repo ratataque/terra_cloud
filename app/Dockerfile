@@ -41,7 +41,7 @@ RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf
 RUN a2enmod rewrite
 
 # Reduce Apache memory usage - CRITICAL for 512MB!
-RUN echo "ServerLimit 2\nMaxRequestWorkers 2\nThreadsPerChild 25" >> /etc/apache2/mods-enabled/mpm_prefork.conf
+RUN echo -e "<IfModule mpm_prefork_module>\n    StartServers 1\n    MinSpareServers 1\n    MaxSpareServers 2\n    MaxRequestWorkers 10\n    MaxConnectionsPerChild 1000\n</IfModule>" > /etc/apache2/mods-available/mpm_prefork.conf
 
 # Exposez le port 80
 EXPOSE 80
