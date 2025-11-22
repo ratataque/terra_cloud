@@ -5,18 +5,18 @@ FROM php:8.2.8-apache
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 
-# Install PHP extensions (add opcache for performance!)
+# Install PHP extensions (only what's needed)
 RUN docker-php-ext-install pdo_mysql opcache
 
-# Install minimal tools and cleanup
+# Install minimal tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git unzip p7zip-full && \
     rm -rf /var/lib/apt/lists/*
 
-# Installez Composer
+# Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Copiez les fichiers de l'application dans le conteneur
+# Copy application files
 COPY . /var/www/html/
 
 # Install dependencies WITHOUT dev packages (saves 20-30MB)
@@ -29,21 +29,22 @@ COPY docker/php-production.ini /usr/local/etc/php/conf.d/zzz-production.ini
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-RUN chown -R www-data:www-data /var/www/html/vendor /var/www/html/storage /var/www/html/bootstrap /var/www/html/public /var/www/html/app /var/www/html/config /var/www/html/routes /var/www/html/resources
-RUN chmod -R 755 /var/www/html/vendor /var/www/html/storage /var/www/html/bootstrap /var/www/html/public /var/www/html/app /var/www/html/config /var/www/html/routes /var/www/html/resources
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html/vendor /var/www/html/storage /var/www/html/bootstrap /var/www/html/public && \
+    chmod -R 755 /var/www/html/storage /var/www/html/bootstrap
 
-# Modifiez la configuration d'Apache pour pointer vers le répertoire public
-ENV APACHE_DOCUMENT_ROOT /var/www/html/public
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
-RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+# Configure Apache
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf && \
+    sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
 # Enable Apache modules
 RUN a2enmod rewrite
 
-# Reduce Apache memory usage - CRITICAL for 512MB!
+# Reduce Apache memory usage
 RUN echo "ServerLimit 2\nMaxRequestWorkers 2\nThreadsPerChild 25" >> /etc/apache2/mods-enabled/mpm_prefork.conf
 
-# Exposez le port 80
+# Expose port
 EXPOSE 80
 
 # Use entrypoint script
