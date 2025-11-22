@@ -4,14 +4,13 @@ set -e
 echo "Running database migrations..."
 php artisan migrate --force
 
-# Check if database is empty (no users table or it's empty)
-echo "Checking if database needs seeding..."
-TABLE_COUNT=$(php artisan tinker --execute="echo \DB::table('users')->count();" 2>/dev/null || echo "0")
-if [ "$TABLE_COUNT" = "0" ]; then
-  echo "Database is empty, running seeders..."
+# Only seed if flag file exists (touch /tmp/need-seed to trigger seeding)
+if [ -f /tmp/need-seed ]; then
+  echo "Seed flag detected, running seeders..."
   php artisan db:seed --force
+  rm /tmp/need-seed
 else
-  echo "Database already has data, skipping seeding."
+  echo "No seed flag, skipping seeding (create /tmp/need-seed to force seed)."
 fi
 
 echo "Starting Apache..."
