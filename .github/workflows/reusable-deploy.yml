@@ -107,6 +107,6 @@ jobs:
                   client-payload: |
                       {
                         "environment": "${{ inputs.environment }}",
-                        "image_tag": "${{ steps.semver.outputs.version }}",
+                        "image_tag": "${{ steps.semver.outputs.version }}-${{ inputs.environment }}",
                         "git_sha": "${{ github.sha }}"
                       }
