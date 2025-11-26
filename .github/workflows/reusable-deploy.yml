@@ -58,8 +58,14 @@ jobs:
               run: |
                   git config user.name github-actions
                   git config user.email github-actions@github.com
-                  git tag v${{ steps.semver.outputs.version }}-${{ inputs.environment }}
-                  git push origin v${{ steps.semver.outputs.version }}-${{ inputs.environment }}
+                  TAG="v${{ steps.semver.outputs.version }}-${{ inputs.environment }}"
+                  if git ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
+                    echo "Tag $TAG already exists on remote."
+                  else
+                    echo "Tag $TAG does not exist on remote. Creating and pushing."
+                    git tag "$TAG" 2>/dev/null || echo "Tag $TAG already exists locally."
+                    git push origin "$TAG"
+                  fi
 
             - name: Azure Login via OIDC
               uses: azure/login@v1
